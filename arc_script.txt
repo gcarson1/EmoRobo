@@ -1,0 +1,19 @@
+# ARC Script Example (for Script Skill)
+$emo = $EmotionLabel  # or your MQTT variable
+if ($emo = "") $emo = "neutral"
+
+if ($emo != $LastEmo)
+  $LastEmo = $emo
+  if ($emo = "happy")
+    ControlCommand("Auto Position", "Action", "Happy")
+    Say("You look happy")
+  elseif ($emo = "sad")
+    ControlCommand("Auto Position", "Action", "Sad")
+    Say("It will be okay")
+  elseif ($emo = "angry")
+    ControlCommand("Auto Position", "Action", "Angry")
+    Say("Take a deep breath")
+  else
+    ControlCommand("Auto Position", "Action", "Neutral")
+  endif
+endif
