@@ -1,220 +1,156 @@
 
-# EZ-Robot Facial Expression Recognition (Offline Local Model)
+# EmoRobo — ARC + Local Emotion Recognition (Brutally Accurate)
 
-This project enables an EZ-Robot (JD Humanoid) to read human facial expressions **without relying on cloud APIs**.  
-It streams camera footage from Synthiam ARC to a Python model running locally, classifies facial expressions, and (optionally) sends the emotion back to ARC to trigger robot responses.
-
----
-
-## 🚧 Project Overview
-
-This project was built to solve two main problems:
-
-1. **ARC’s built-in AI vision isn't reliable offline**  
-2. We needed a **local, fast, and customizable ML model** to classify emotions from the robot’s camera feed
-
-The solution:
-
-- Use ARC to control the robot + host the camera stream
-- Use Python to run an offline ML model for emotion detection
-- (Optional) Send the detected emotion back to ARC for robot behaviors
+This repo runs **offline facial expression recognition** on your PC and shows the result in a window. It **can** also poke ARC if you enable its TCP Script Server and have **Auto Position** frames that match the labels — otherwise ARC does nothing. No cloud, no magic.
 
 ---
 
-## ✅ Requirements
+## What This Actually Does
 
-### Hardware
-- EZ-Robot JD Humanoid (or any EZ-B v4 based robot with camera)
-- Computer on the **same network** as the robot
+- **Camera source:** ARC’s Camera Device HLS stream at `http://localhost:8094/Default.m3u8` (hard‑coded in `test_model.py`).
+- **Model:** A scikit‑learn pipeline pickled to a single file named **`model`** in the project root (no extension).
+- **Classes:** Loaded from `class_names.npy` (NumPy array of strings).
+- **Landmarks:** MediaPipe FaceMesh → features via `utils.py` → SVM probabilities.
+- **Decision:** Moving average over last **15** frames, label only if `top >= 0.55` and `(top - second) >= 0.15`; otherwise `NEUTRAL/UNSURE`.
+- **Display:** OpenCV window overlays label + debug.
+- **ARC hook (optional):** If ARC’s TCP Script Server is reachable at **127.0.0.1:5000**, `test_model.py` will send `ControlCommand("Auto Position","AutoPositionFrame","<Label>")` and `Say("<Label>")` at most every **0.75s** when the label changes. If you don’t have matching frames, nothing happens.
 
-### Software
-| Component | Version | Notes |
-|-----------|----------|--------|
-| Synthiam ARC | Latest | Must have Camera and EZB skills installed |
-| Python | 3.9–3.11 | **Do not use 3.12+** due to ML dependency issues |
-| pip packages | See `requirements.txt` | Install after cloning repo |
-
-> If you skip matching Python versions, expect dependency failures.
+> If you expected motor reactions and you see **only the window label**, it means **your ARC isn’t exposing the Script Server or your Auto Position frames don’t match**. Fix that or accept display‑only behavior.
 
 ---
 
-## 📦 Setup Instructions
+## Repo Layout (key files)
 
-### 1. Install Synthiam ARC
-
-Download & install from:  
-https://synthiam.com/Software/ARC
-
-Run ARC once after installation so it finishes module setup.
-
----
-
-### 2. Clone the Repository
-
-```bash
-git clone <your_repo_url_here>
-cd <repo_folder_name>
+```
+ARC_proj/
+  ├─ idk.EZB                 # ARC project
+  └─ jd_controller.py        # Minimal ARC client (optional/manual)
+class_names.npy              # Saved by prepare_data.py (or included)
+model/                       # Directory placeholder (not used by test_model.py)
+model                        # <-- The actual trained model file (pickle, no ext)
+requirements.txt
+test_model.py                # Main runtime (reads ARC HLS and classifies)
+train_model.py               # Trains model -> writes ./model
+prepare_data.py              # Builds data.txt + class_names.npy from dataset
+utils.py                     # FaceMesh feature extraction helpers
+cam_test.py                  # Local camera index sanity check
+arc_script.txt               # Example ARC script reacting to $EmotionLabel
+Plan.md                      # Project notes
 ```
 
-Replace the placeholder with your actual repo link.
+**Yes, the model file name is literally `model` with no extension.** That’s how `pickle.dump` writes it in `train_model.py` and how `test_model.py` loads it (`MODEL_PATH = "model"`).
 
 ---
 
-### 3. Open the ARC Project
+## Requirements
 
-1. Launch Synthiam ARC  
-2. Click **Open Project**
-3. Select the included `.ezproject` file from this repo
+- **Python** 3.9–3.11 (3.12 will fight you on deps)
+- **Synthiam ARC** (current build)
+- Same machine runs **ARC** and **Python** (because the HLS URL is `localhost`)
 
-**If you don’t see the project file, you're in the wrong directory.**
-
----
-
-### 4. Install Python Dependencies
-
-From inside the repo directory:
+Install Python deps:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If errors appear, **read them**. Most issues are missing OS packages or wrong Python version.
-
----
-
-## 🤖 Robot Connection & Camera Setup
-
-### 5. Connect to the Robot Network
-
-You have two options:
-
-| Mode | When to Use |
-|--------|----------------|
-| Connect to EZ-B Wi-Fi | Initial setup or direct connection |
-| Use Home/Local LAN | For stable two‑way messaging between ARC & Python |
-
-ARC must show a successful EZ-B connection before proceeding.
-
----
-
-### 6. Connect to the Robot in ARC
-
-In ARC:
-
-1. Add or open the **EZ-B Connection** skill  
-2. Enter the EZ-B’s IP address  
-3. Click **Connect**
-
-You should hear the robot speak or chime when connected.
-
----
-
-### 7. Start Camera Feed
-
-In ARC:
-
-1. Add the **Camera Device** skill (if not already present)
-2. Select the EZ-Robot Camera
-3. Click **Start** to confirm live video feed
-
-If the camera fails here, **stop—Python won’t fix this.** Fix ARC first.
-
----
-
-### 8. Start Camera Stream Server
-
-Still in ARC Camera Skill:
-
-- Enable **HTTP/MJPEG Camera Streaming**
-- Note the stream URL provided (e.g. `http://192.168.1.1:24` or similar)
-
-Test the stream in a browser **first**.  
-If your browser can’t load it, Python won’t either.
-
-Example test URL check:
-
+`requirements.txt` pins:
 ```
-http://<robot_ip>:<port>/
+numpy==1.26.4
+scikit-learn==1.3.2
+opencv-python==4.9.0.80
+mediapipe==0.10.14
 ```
 
 ---
 
-## 🧠 Run Local Emotion Detection Model
+## ARC Setup (no guessing, do this)
 
-### 9. Run the Local Test Script
+1. **Open ARC project**: `ARC_proj/idk.EZB`
+2. **Camera Device** skill:
+   - Start the EZ‑Robot camera (verify preview works in ARC).
+   - Enable **HLS/HTTP stream** so ARC serves `http://localhost:8094/Default.m3u8`.
+   - Test that URL in a browser. If the browser can’t open it, Python won’t either.
+3. **(Optional for robot reactions)** **Script TCP Server (RAW EZ‑Script)**:
+   - Add/start the Script Server on **127.0.0.1:5000** (default).
+   - In **Auto Position**, create frames named to match the labels your model emits (e.g., `Happy`, `Sad`, `Angry`, `Surprised`, `Neutral`). Capitalization matters because the code title‑cases.
+   - If you don’t do this, ARC will ignore the commands and only the PC window will update.
+
+---
+
+## Training a Model (only if you don’t already have `./model`)
+
+1. Prepare a dataset folder with subfolders per class (e.g., `happy/`, `sad/`, …).
+2. Build features:
+   ```bash
+   python prepare_data.py /path/to/dataset_root
+   ```
+   This writes `data.txt` and `class_names.npy`.
+3. Train:
+   ```bash
+   python train_model.py
+   ```
+   This writes the pickled pipeline to `./model`.
+4. Confirm you now have:
+   - `./model` (file)  
+   - `./class_names.npy`
+
+If `./model` is missing, **`test_model.py` will crash** on startup. That’s on you.
+
+---
+
+## Running the Demo (display‑only by default)
+
+Make sure ARC is streaming at `http://localhost:8094/Default.m3u8`.
 
 ```bash
 python test_model.py
 ```
 
-The script will:
-
-- Pull frames from the ARC camera stream
-- Run the trained model locally
-- Print or display the detected emotions in real‑time
-
-If it errors immediately, check:
-- Wrong stream URL in script
-- Missing model file(s)
-- Wrong Python version
+- A window titled **Emotion** opens.
+- Press **`q`** to quit.
+- If ARC Script Server is up and frames exist, the robot will speak and try the corresponding Auto Position frame when a stable label is detected; otherwise, nothing on the robot.
 
 ---
 
-## 🧪 Troubleshooting Checklist
+## Config knobs (in `test_model.py`)
 
-If something fails, check these **in this order**:
-
-| Step | Must be True |
-|------|----------------|
-| ARC installed and runs | ✅ |
-| Robot connects in ARC | ✅ |
-| Camera feed visible in ARC | ✅ |
-| Stream opens in browser | ✅ |
-| Python dependencies installed | ✅ |
-| `test_model.py` runs without crashing | ✅ |
-
-If any ❌ is true, fix that step first. Don’t skip ahead.
+- `MODEL_PATH = "model"`  
+- `CLASS_NAMES_PATH = "class_names.npy"`
+- `SMOOTH_WINDOW = 15`
+- `THRESHOLD = 0.55`
+- `MARGIN = 0.15`
+- `ARC_HOST = "127.0.0.1"`
+- `ARC_PORT = 5000`
+- `SEND_EVERY_SEC = 0.75`
+- **Camera URL**: `cv2.VideoCapture("http://localhost:8094/Default.m3u8")` (change here if you move ARC off-box)
 
 ---
 
-## 🚀 Next Phase: Robot Reactions (Optional)
+## Common Failure Points (and the blunt fix)
 
-Once basic detection works, you can expand functionality:
-
-| Feature | Description |
-|----------|----------------|
-| Send emotion back to ARC | Trigger robot animations, speech, LED responses |
-| Replace model with a better one | Increase accuracy, add more emotions |
-| Make script headless | Run without UI for performance |
-| Bundle into ARC behavior control | Fully integrate into robot behaviors |
-
-If you want, a `robot_actions.py` module can be added to handle reactions automatically.
+- **Black window / cannot open stream** → Your ARC HLS stream isn’t enabled or isn’t on `localhost:8094`. Fix Camera Device settings and test in a browser.
+- **Immediate crash: cannot open `model`** → You didn’t train or copy the model. Run `train_model.py` or drop a valid pickle at `./model`.
+- **Mediapipe import error** → Wrong Python version or missing deps. Use 3.9–3.11 and reinstall from `requirements.txt`.
+- **Robot never reacts** → You didn’t start the **Script TCP Server** in ARC, or your Auto Position frames don’t match the label text (case/spacing).
+- **Label flickers** → Lower `SMOOTH_WINDOW` or tweak `THRESHOLD`/`MARGIN`. If you make them too loose, expect false positives.
+- **High CPU** → FaceMesh is not free. Close other apps or drop camera FPS/size in ARC.
 
 ---
 
-## 📂 Expected Project Structure
+## Roadmap (when you decide to care)
 
-```
-project_root/
-│
-├─ arc_project/
-│   └─ your_project.ezproject
-│
-├─ model/
-│   ├─ model.pkl
-│   └─ labels.json
-│
-├─ test_model.py
-├─ requirements.txt
-└─ README.md
-```
+- Config file for stream URL/thresholds instead of hard‑coded values.
+- Proper logging instead of print spam.
+- Model card + dataset notes.
+- Unit tests for the feature extractor.
 
 ---
 
-## ✨ Credits
+## License
 
-Developed as part of a hands-on project to enable **offline** emotion recognition for EZ‑Robots using Python + ARC integrations.
+MIT (see `LICENSE`).
 
 ---
 
-If you'd like, I can also generate a **Phase 2 README** for integrating the robot’s reaction system once we finish the test phase.
+If you want me to also **generate a tiny `config.py` and patch `test_model.py`** to read it, say the word. Until then, this README documents the code **exactly as it is now**.
