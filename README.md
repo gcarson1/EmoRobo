@@ -2,7 +2,6 @@
 
 - **Python** 3.9–3.11 (3.12 will fight you on deps)
 - **Synthiam ARC** (current build)
-- Same machine runs **ARC** and **Python** (because the HLS URL is `localhost`)
 
 Install Python deps:
 
@@ -87,4 +86,5 @@ MIT (see `LICENSE`).
 ---
 
 If you want me to also **generate a tiny `config.py` and patch `test_model.py`** to read it, say the word. Until then, this README documents the code **exactly as it is now**.
+
 
