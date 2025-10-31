@@ -82,9 +82,3 @@ python test_model.py
 ## License
 
 MIT (see `LICENSE`).
-
----
-
-If you want me to also **generate a tiny `config.py` and patch `test_model.py`** to read it, say the word. Until then, this README documents the code **exactly as it is now**.
-
-
